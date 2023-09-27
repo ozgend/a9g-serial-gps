@@ -8,6 +8,10 @@ const getAtCommand = (word) => {
 };
 
 
+/****/
+// position filtering and smoothing
+// via https://github.com/infusion/GPS.js
+
 // Simple Kalman Filter set up
 const _A = Sylvester.Matrix.I(2);
 const _B = Sylvester.Matrix.Zero(2, 2);
@@ -19,6 +23,7 @@ const _R = Sylvester.Matrix.I(2).multiply(0.00001);
 // Measure
 const _uVector = $V([0, 0]);
 const _kalmanFilter = new Kalman($V([0, 0]), $M([[1, 0], [0, 1]]));
+/****/
 
 class A9GSerialGPS {
   constructor({ device, baudRate = 115200, delimiter = '\r\n', pollInterval = 1 }) {
