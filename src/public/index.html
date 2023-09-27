@@ -1,0 +1,296 @@
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>A9G Serial GPS</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="/socket.io/socket.io.js"></script>
+
+  <style>
+    html,
+    body {
+      font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+      height: 100%;
+      margin: 0;
+    }
+
+    th {
+      text-align: right
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    #gps-info {
+      z-index: 666;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      background: rgba(255, 255, 255, 0.4);
+      padding: 10px;
+      font-size: 12px;
+    }
+
+    input[type="range"].active {
+      accent-color: rgb(35, 53, 251) !important;
+    }
+
+    input[type="range"].inactive {
+      accent-color: rgba(100, 100, 100, 0.1) !important;
+    }
+  </style>
+
+
+</head>
+
+<body>
+
+  <div id="gps-info">
+    <h1>Satellites</h1>
+    <table>
+      <tr>
+        <th>Sats Active</th>
+        <td id="gps-sat-active"></td>
+      </tr>
+      <tr>
+        <th>Sats Visible</th>
+        <td id="gps-sat-visible"></td>
+      </tr>
+    </table>
+    <table id="sat-data"> </table>
+
+
+    <h1>GPS Info</h1>
+    <table id="gps-data">
+      <tr>
+        <th>Date</th>
+        <td id="gps-date"></td>
+      </tr>
+      <tr>
+        <th>Latitude</th>
+        <td id="gps-lat"></td>
+      </tr>
+      <tr>
+        <th>Longitude</th>
+        <td id="gps-lon"></td>
+      </tr>
+      <tr>
+        <th>Altitude</th>
+        <td id="gps-alt"></td>
+      </tr>
+      <tr>
+        <th>Speed</th>
+        <td id="gps-speed"></td>
+      </tr>
+      <tr>
+        <th>Bearing</th>
+        <td id="gps-bearing"></td>
+      </tr>
+      <tr>
+        <th>Status</th>
+        <td id="gps-status"></td>
+      </tr>
+      <tr>
+        <th>PDOP</th>
+        <td id="gps-pdop"></td>
+      </tr>
+      <tr>
+        <th>VDOP</th>
+        <td id="gps-vdop"></td>
+      </tr>
+      <tr>
+        <th>HDOP</th>
+        <td id="gps-hdop"></td>
+      </tr>
+    </table>
+
+  </div>
+
+  <div id="map" class="leaflet-container leaflet-touch leaflet-fade-anim leaflet-grab leaflet-touch-drag leaflet-touch-zoom"></div>
+
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const satDataTable = $("#sat-data");
+
+    const initializeMap = () => {
+      const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 22,
+        attribution: '© OpenStreetMap'
+      });
+
+      const osmHOT = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+        maxZoom: 22,
+        attribution: '© OpenStreetMap'
+      });
+
+      const osmBw = L.tileLayer('https://tiles.wmflabs.org/bw-mapnik/{z}/{x}/{y}.png', {
+        maxZoom: 22,
+        attribution: '© OpenStreetMap'
+      });
+
+      const stadiaToner = L.tileLayer('https://tiles.stadiamaps.com/tiles/stamen_toner/{z}/{x}/{y}.png', {
+        maxZoom: 22,
+        attribution: '© Stadia Maps'
+      });
+
+      const stadiaDark = L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
+        maxZoom: 22,
+        attribution: '© Stadia Maps'
+      });
+
+      const cartoLight = L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png	', {
+        maxZoom: 22,
+        attribution: '© Carto'
+      });
+
+      const cartoDark = L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png', {
+        maxZoom: 22,
+        attribution: '© Carto'
+      });
+
+      const openCycle = L.tileLayer('https://tile.thunderforest.com/cycle/{z}/{x}/{y}.png', {
+        maxZoom: 20,
+        attribution: '© OpenCycleMap'
+      });
+
+      const layers = {
+        "OpenStreetMap": osm,
+        "OpenStreetMap HOT": osmHOT,
+        "Stadia Toner": stadiaToner,
+        "Stadia Dark": stadiaDark,
+        "Carto Light": cartoLight,
+        "Carto Dark": cartoDark,
+        "OpenCycleMap": openCycle,
+      };
+
+      var map = L.map('map', {
+        center: [39.73, -104.99],
+        zoom: 10,
+        layers: [osmHOT]
+      });
+
+      L.control.layers(layers).addTo(map);
+
+      return map;
+    };
+
+    const initializeSocket = (onState) => {
+      const socket = io();
+      socket.on('connect', () => {
+        console.log('Connected to socket server');
+      });
+      socket.on('disconnect', () => {
+        console.log('Disconnected from socket server');
+      });
+      socket.on('state', (state) => {
+        onState(state);
+      });
+      return socket;
+    };
+
+    const getPolygonPaths = (mu, Sigma, p) => {
+      p = p || 0.95;
+      var s = -2 * Math.log(1 - p);
+
+      var a = Sigma[0][0] + 0.0000000000001;
+      var b = Sigma[0][1] + 0.0000000000001;
+      var c = Sigma[1][0] + 0.0000000000001;
+      var d = Sigma[1][1] + 0.0000000000001;
+
+      var tmp = Math.sqrt((a - d) * (a - d) + 4 * b * c);
+      var V = [
+        [-(tmp - a + d) / (2 * c), (tmp + a - d) / (2 * c)],
+        [1, 1]
+      ];
+      var sqrtD = [
+        Math.sqrt(s * (a + d - tmp) / 2),
+        Math.sqrt(s * (a + d + tmp) / 2)
+      ];
+
+      var norm1 = Math.hypot(V[0][0], 1);
+      var norm2 = Math.hypot(V[0][1], 1);
+      V[0][0] /= norm1;
+      V[1][0] /= norm1;
+      V[0][1] /= norm2;
+      V[1][1] /= norm2;
+
+      var ndx = sqrtD[0] < sqrtD[1] ? 1 : 0;
+
+      var x1 = mu[0] + V[0][ndx] * sqrtD[ndx];
+      var y1 = mu[1] + V[1][ndx] * sqrtD[ndx];
+
+      var x2 = mu[0] + V[0][1 - ndx] * sqrtD[1 - ndx];
+      var y2 = mu[1] + V[1][1 - ndx] * sqrtD[1 - ndx];
+
+
+      var x = mu[0];
+      var y = mu[1];
+      var radiusX = Math.hypot(x1 - mu[0], y1 - mu[1]);
+      var radiusY = Math.hypot(x2 - mu[0], y2 - mu[1]);
+      var rotation = Math.atan2(y1 - mu[1], x1 - mu[0]);
+
+      var pts = [];
+      for (var i = 0; i <= 50; i++) {
+        var a = i / 50 * Math.PI * 2 + Math.random();
+        pts.push({
+          lat: x + radiusX * Math.cos(a + rotation),
+          lng: y + radiusY * Math.sin(a)
+        });
+      }
+      return pts;
+    };
+
+    const updateDetails = (state) => {
+      $("#gps-date").innerText = (new Date(state.time)).toLocaleString();
+      $("#gps-lat").innerText = state.lat.toFixed(6);
+      $("#gps-lon").innerText = state.lon.toFixed(6);
+      $("#gps-alt").innerText = state.alt ?? 'N/A';
+      $("#gps-speed").innerText = state.speed.toFixed(2);
+      $("#gps-bearing").innerText = state.bearing;
+      $("#gps-status").innerText = state.fix;
+      $("#gps-pdop").innerText = state.pdop;
+      $("#gps-vdop").innerText = state.vdop;
+      $("#gps-hdop").innerText = state.hdop;
+      $("#gps-sat-active").innerText = state.satsActive.length;
+      $("#gps-sat-visible").innerText = state.satsVisible.length;
+
+      satDataTable.innerHTML = '<tr><th>prn</th><td>snr</td></tr>';
+      state.satsVisible.sort((a, b) => b.snr - a.snr);
+      state.satsVisible.forEach((sat) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <th>#${sat.prn}</th>
+          <td>(${sat.snr ?? '-'}) <input type="range" min="0" max="100" value="${sat.snr ?? 0}" class="${sat.status === 'tracking' ? 'active' : 'inactive'}"></td>
+        `;
+        satDataTable.appendChild(row);
+      });
+    };
+
+    const init = () => {
+      const map = initializeMap();
+      const marker = L.marker([0, 0]).addTo(map);
+      let polygonPaths = [];
+      const polygon = L.polygon(polygonPaths).addTo(map);
+      const socket = initializeSocket((state) => {
+        // console.log(state);
+        updateDetails(state);
+        polygonPaths = getPolygonPaths(state.position.pos, state.position.cov);
+        polygon.setLatLngs(polygonPaths);
+        marker.setLatLng([state.position.pos[0], state.position.pos[1]]);
+        map.setView([state.position.pos[0], state.position.pos[1]]);
+      });
+    };
+
+    init();
+
+  </script>
+</body>
+
+</html>
