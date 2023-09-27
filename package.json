@@ -1,0 +1,19 @@
+{
+  "name": "gps-module-playground",
+  "version": "1.0.0",
+  "description": "",
+  "main": "serial-a9g.js",
+  "scripts": {
+    "server": "node ./src/server-a9g.js",
+    "console": "node ./src/console-a9g.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "gps": "^0.6.1",
+    "kalman": "^0.0.2",
+    "serialport": "^12.0.0",
+    "socket.io": "^4.7.2"
+  }
+}
