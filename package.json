@@ -1,5 +1,5 @@
 {
-  "name": "gps-module-playground",
+  "name": "a9g-serial-gps",
   "version": "1.0.0",
   "description": "",
   "main": "serial-a9g.js",
