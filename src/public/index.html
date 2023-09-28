@@ -53,6 +53,9 @@
 <body>
 
   <div id="gps-info">
+    <h1>AT Commands</h1>
+    <table id="at-commands"> </table>
+
     <h1>Satellites</h1>
     <table>
       <tr>
@@ -65,7 +68,6 @@
       </tr>
     </table>
     <table id="sat-data"> </table>
-
 
     <h1>GPS Info</h1>
     <table id="gps-data">
@@ -118,6 +120,7 @@
   <script>
     const $ = (selector) => document.querySelector(selector);
     const satDataTable = $("#sat-data");
+    const atCommandTable = $("#at-commands");
 
     const initializeMap = () => {
       const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -181,16 +184,13 @@
       return map;
     };
 
-    const initializeSocket = (onState) => {
+    const initializeSocket = () => {
       const socket = io();
       socket.on('connect', () => {
         console.log('Connected to socket server');
       });
       socket.on('disconnect', () => {
         console.log('Disconnected from socket server');
-      });
-      socket.on('state', (state) => {
-        onState(state);
       });
       return socket;
     };
@@ -247,7 +247,19 @@
       return pts;
     };
 
-    const updateDetails = (state) => {
+    const updateAtResponses = (data) => {
+      atCommandTable.innerHTML = '';
+      Object.keys(data).forEach((key) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <th>${key}</th>
+          <td>${data[key]}</td>
+        `;
+        atCommandTable.appendChild(row);
+      });
+    };
+
+    const updateGpsState = (state) => {
       $("#gps-date").innerText = (new Date(state.time)).toLocaleString();
       $("#gps-lat").innerText = state.lat.toFixed(6);
       $("#gps-lon").innerText = state.lon.toFixed(6);
@@ -274,18 +286,25 @@
     };
 
     const init = () => {
+      let polygonPaths = [];
       const map = initializeMap();
       const marker = L.marker([0, 0]).addTo(map);
-      let polygonPaths = [];
       const polygon = L.polygon(polygonPaths).addTo(map);
-      const socket = initializeSocket((state) => {
+      const socket = initializeSocket();
+
+      socket.on('gps.data', (state) => {
         // console.log(state);
-        updateDetails(state);
+        updateGpsState(state);
         polygonPaths = getPolygonPaths(state.position.pos, state.position.cov);
         polygon.setLatLngs(polygonPaths);
         marker.setLatLng([state.position.pos[0], state.position.pos[1]]);
         map.setView([state.position.pos[0], state.position.pos[1]]);
       });
+
+      socket.on('at.*', (data) => {
+        updateAtResponses(data);
+      });
+
     };
 
     init();

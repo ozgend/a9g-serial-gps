@@ -13,10 +13,15 @@ const _a9gSerialGps = new A9GSerialGPS(_options);
 
 _a9gSerialGps.on('error', console.error);
 
-_a9gSerialGps.on('data', (data) => {
+_a9gSerialGps.on('gps.data', (data) => {
   let gpsState = _a9gSerialGps.getGpsState();
-  io.emit('state', gpsState);
+  io.emit('gps.data', gpsState);
 });
+
+_a9gSerialGps.on('at.*', (data) => {
+  io.emit('at.*', data);
+});
+
 
 app.get('/', function (req, res) {
   res.sendFile(`${__dirname}/public/index.html`);

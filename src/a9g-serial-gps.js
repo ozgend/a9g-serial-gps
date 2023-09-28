@@ -1,7 +1,10 @@
 const { SerialPort, ReadlineParser } = require('serialport');
 const GPS = require('gps');
 const Sylvester = require('sylvester');
+const e = require('express');
 const Kalman = require('kalman').KF;
+
+const ignoredAtCommands = ['GPSRD'];
 
 const getAtCommand = (word) => {
   return `${word}\r\n`;
@@ -26,7 +29,11 @@ const _kalmanFilter = new Kalman($V([0, 0]), $M([[1, 0], [0, 1]]));
 /****/
 
 class A9GSerialGPS {
-  constructor({ device, baudRate = 115200, delimiter = '\r\n', pollInterval = 1 }) {
+  static async listDevices() {
+    return SerialPort.list();
+  }
+
+  constructor({ device, baudRate = 115200, delimiter = '\r\n', pollInterval = 2 }) {
     this._device = device;
     this._baudRate = baudRate;
     this._delimiter = delimiter;
@@ -34,9 +41,9 @@ class A9GSerialGPS {
     this._gpsDataset = {};
     this._serialPort = null;
     this._eventHandlers = {};
+    this._atResponses = {};
 
     this._prev = { lat: null, lon: null };
-
     this._gps = new GPS();
     this._gps.state.bearing = 0;
     this._gps.on('data', data => {
@@ -59,26 +66,42 @@ class A9GSerialGPS {
         };
       }
 
-      this._getEventHandler('data')(data);
+      this._getEventHandler('gps.data')(data);
     });
 
+    // report gps.state periodically
     setInterval(() => {
-      this._getEventHandler('state')(this._gps.state);
+      this._getEventHandler('gps.state')(this._gps.state);
     }, this._pollInterval * 1000);
 
-
+    // report gps.dataset periodically, for debugging
     setInterval(() => {
-      this._getEventHandler('dataset')(this._gpsDataset);
+      this._getEventHandler('gps.dataset')(this._gpsDataset);
     }, this._pollInterval * 1000);
+
+    // always report at.* responses
+    setInterval(() => {
+      this._getEventHandler(`at.*`)(this._atResponses);
+
+      Object.entries(this._atResponses).forEach(([atKey, atResponse]) => {
+        this._getEventHandler(`at.${atKey}`)(atResponse);
+      })
+    }, 1000);
+
+    // poll signal quality
+    setInterval(() => {
+      this._write('AT+CSQ');
+    }, 3000);
+
+    // poll device info
+    setInterval(() => {
+      this._write('AT+GPSMD?');
+    }, 10000);
   }
 
   _getEventHandler(type) {
     let handler = this._eventHandlers[type] ?? (() => { });
     return handler;
-  }
-
-  static async listDevices() {
-    return SerialPort.list();
   }
 
   on(type, handler) {
@@ -97,12 +120,19 @@ class A9GSerialGPS {
     this._write('AT+GPS=1');
   }
 
+  disableGps() {
+    this._write('AT+GPS=0');
+  }
+
   setGpsPolling(interval) {
     this._write(`AT+GPSRD=${interval}`);
   }
 
-  disableGps() {
-    this._write('AT+GPS=0');
+  setAtCommandResponse(command, response) {
+    if (ignoredAtCommands.some(c => command.includes(c))) {
+      return;
+    }
+    this._atResponses[command] = response;
   }
 
   _write(command) {
@@ -114,9 +144,11 @@ class A9GSerialGPS {
 
     let atCommand = getAtCommand(command);
     this._serialPort.write(atCommand, (err) => {
+      this.setAtCommandResponse(command, 'NO_RESPONSE');
       if (err) {
         console.error('Error on write: ', err.message);
         this._getEventHandler('error')(err);
+        this.setAtCommandResponse(command, err.message);
       }
     });
   }
@@ -141,7 +173,32 @@ class A9GSerialGPS {
     });
 
     this._serialPort.on('data', data => {
-      this._gps.updatePartial(data);
+      // handle AT responses for non AT+GPSRD data
+      const stringData = data.toString().trim();
+      const firstLine = stringData.split('\r\n')[0];
+      const sentCommands = Object.keys(this._atResponses);
+      if (!firstLine.includes('+GPSRD') && sentCommands.includes(firstLine)) {
+        //console.log(stringData);
+        const atCommand = firstLine;
+        const atResponseLines = stringData.split('\r\n');
+        let atResponse = 'NO_RESPONSE';
+
+        atResponse = atResponseLines.find(line => line.startsWith('+'));
+
+        if (atResponse) {
+          atResponse = atResponse.replace(/\r\n/g, '').split(':').pop().trim();
+        }
+        else {
+          atResponse = atResponseLines.find(line => line.startsWith('OK') || line.startsWith('ERROR'))
+        }
+
+        this.setAtCommandResponse(atCommand, atResponse);
+      }
+      // handle AT+GPSRD data
+      else {
+        this._gps.updatePartial(data);
+      }
+
       this._getEventHandler('raw-serial')(data);
     });
 
